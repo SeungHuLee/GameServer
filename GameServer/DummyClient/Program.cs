@@ -2,6 +2,7 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 
 namespace DummyClient
 {
@@ -16,32 +17,40 @@ namespace DummyClient
             IPAddress ipAddress = ipHost.AddressList[0];
             IPEndPoint endPoint = new IPEndPoint(ipAddress, 7777);
 
-            // Socket, TCP
-            Socket socket = new Socket(endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-
-            try
+            while (true)
             {
-                // Connect
-                socket.Connect(endPoint);
-                Console.WriteLine($"Connected To {socket.RemoteEndPoint.ToString()}");
+                // Socket, TCP
+                Socket socket = new Socket(endPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
-                // Send
-                byte[] sendBuf = Encoding.UTF8.GetBytes("Hello Server from Client!");
-                int sendBytes = socket.Send(sendBuf);
+                try
+                {
+                    // Connect
+                    socket.Connect(endPoint);
+                    Console.WriteLine($"Connected To {socket.RemoteEndPoint.ToString()}");
 
-                // Receive
-                byte[] recvBuf = new byte[1024];
-                int recvBytes = socket.Receive(recvBuf);
+                    // Send
+                    for (int i = 0; i < 5; i++)
+                    {
+                        byte[] sendBuf = Encoding.UTF8.GetBytes($"Hello Server from Client! {i}\n");
+                        int sendBytes = socket.Send(sendBuf);
+                    }
 
-                string recvData = Encoding.UTF8.GetString(recvBuf, 0, recvBytes);
-                Console.WriteLine($"[From Server] {recvData}");
+                    // Receive
+                    byte[] recvBuf = new byte[1024];
+                    int recvBytes = socket.Receive(recvBuf);
 
-                socket.Shutdown(SocketShutdown.Both);
-                socket.Close();
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e.ToString());
+                    string recvData = Encoding.UTF8.GetString(recvBuf, 0, recvBytes);
+                    Console.WriteLine($"[From Server] {recvData}");
+
+                    socket.Shutdown(SocketShutdown.Both);
+                    socket.Close();
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e.ToString());
+                }
+
+                Thread.Sleep(100);
             }
         }
     }
