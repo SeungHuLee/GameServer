@@ -1,12 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 
 namespace ServerCore
 {
-    class Session
+    public abstract class Session
     {
         int _disconnected = 0;
         object _lock = new object();
@@ -43,6 +44,7 @@ namespace ServerCore
         {
             if (Interlocked.Exchange(ref _disconnected, 1) == 1) { return; }
 
+            OnDisconnected(_socket.RemoteEndPoint);
             _socket.Shutdown(SocketShutdown.Both);
             _socket.Close();
         }
@@ -80,7 +82,7 @@ namespace ServerCore
                         _sendArgs.BufferList = null;
                         _pendingList.Clear();
 
-                        Console.WriteLine($"Transferred bytes: {_sendArgs.BytesTransferred}");
+                        OnSend(_sendArgs.BytesTransferred);
 
                         if (_sendQueue.Count > 0)
                         {
@@ -103,11 +105,9 @@ namespace ServerCore
         {
             if (args.BytesTransferred > 0 && args.SocketError == SocketError.Success)
             {
-                // TODO
                 try
                 {
-                    string recvData = Encoding.UTF8.GetString(args.Buffer, args.Offset, args.BytesTransferred);
-                    Console.WriteLine($"[From Client] {recvData}");
+                    OnReceive(new ArraySegment<byte>(args.Buffer, args.Offset, args.BytesTransferred));
 
                     RegisterReceive();
                 }
@@ -122,5 +122,9 @@ namespace ServerCore
             }
         }
         #endregion
+        public abstract void OnConnected(EndPoint endPoint);
+        public abstract void OnReceive(ArraySegment<byte> buffer);
+        public abstract void OnSend(int numOfBytes);
+        public abstract void OnDisconnected(EndPoint endPoint);
     }
 }
