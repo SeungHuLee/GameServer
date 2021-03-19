@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
 using System.Threading;
 
 namespace ServerCore
@@ -11,6 +10,8 @@ namespace ServerCore
     {
         int _disconnected = 0;
         object _lock = new object();
+
+        ReceiveBuffer _recvBuffer = new ReceiveBuffer(1024);
 
         Socket _socket;
         SocketAsyncEventArgs _sendArgs = new SocketAsyncEventArgs();
@@ -67,6 +68,11 @@ namespace ServerCore
 
         private void RegisterReceive()
         {
+            _recvBuffer.Clean();
+
+            ArraySegment<byte> segment = _recvBuffer.WriteSegment;
+            _recvArgs.SetBuffer(segment.Array, segment.Offset, segment.Count);
+
             bool isPending = _socket.ReceiveAsync(_recvArgs);
             if (!isPending) { OnReceiveCompleted(null, _recvArgs); }
         }
@@ -107,7 +113,27 @@ namespace ServerCore
             {
                 try
                 {
-                    OnReceive(new ArraySegment<byte>(args.Buffer, args.Offset, args.BytesTransferred));
+                    // Move Buffer Write Position 
+                    if (!_recvBuffer.OnWrite(args.BytesTransferred))
+                    {
+                        Disconnect();
+                        return;
+                    }
+
+                    // Check how much data was sent to content-end
+                    int processLength = OnReceive(_recvBuffer.ReadSegment);
+                    if (processLength < 0 || _recvBuffer.DataSize < processLength)
+                    {
+                        Disconnect();
+                        return;
+                    }
+
+                    // Move Buffer Read Position
+                    if (!_recvBuffer.OnRead(processLength))
+                    {
+                        Disconnect();
+                        return;
+                    }
 
                     RegisterReceive();
                 }
@@ -123,7 +149,7 @@ namespace ServerCore
         }
         #endregion
         public abstract void OnConnected(EndPoint endPoint);
-        public abstract void OnReceive(ArraySegment<byte> buffer);
+        public abstract int OnReceive(ArraySegment<byte> buffer);
         public abstract void OnSend(int numOfBytes);
         public abstract void OnDisconnected(EndPoint endPoint);
     }
