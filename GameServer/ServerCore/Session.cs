@@ -6,6 +6,36 @@ using System.Threading;
 
 namespace ServerCore
 {
+    public abstract class PacketSession : Session
+    {
+        public static readonly short HeaderSize = 2;
+
+        public sealed override int OnReceive(ArraySegment<byte> buffer)
+        {
+            int processLength = 0;
+
+            while (true)
+            {
+                // Check header is parseable
+                if (buffer.Count < HeaderSize) { break; }
+
+                // Packet check
+                ushort dataSize = BitConverter.ToUInt16(buffer.Array, buffer.Offset);
+                if (buffer.Count < dataSize) { break; }
+
+                // OK - Ready to assemble packet
+                OnReceivePacket(new ArraySegment<byte>(buffer.Array, buffer.Offset, dataSize));
+
+                processLength += dataSize;
+                buffer = new ArraySegment<byte>(buffer.Array, buffer.Offset + dataSize, buffer.Count - dataSize);
+            }
+
+            return processLength;
+        }
+
+        public abstract void OnReceivePacket(ArraySegment<byte> buffer);
+    }
+
     public abstract class Session
     {
         int _disconnected = 0;
