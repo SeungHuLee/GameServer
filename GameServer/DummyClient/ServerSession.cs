@@ -5,21 +5,71 @@ using System.Text;
 
 namespace DummyClient
 {
-    public class Packet
+    public abstract class Packet
     {
         public ushort size;
         public ushort packetID;
+
+        public abstract ArraySegment<byte> Write();
+        public abstract void Read(ArraySegment<byte> segment);
     }
 
     public class PlayerInfoReq : Packet
     {
         public long playerID;
+
+        public PlayerInfoReq()
+        {
+            this.packetID = (ushort)PacketID.PlayerInfoReq;
+        }
+
+        public override void Read(ArraySegment<byte> segment)
+        {
+            ushort usedByteCount = 0;
+
+            // ushort size = BitConverter.ToUInt16(segment.Array, segment.Offset + usedByteCount);
+            usedByteCount += 2;
+            // ushort packetID = BitConverter.ToUInt16(segment.Array, segment.Offset + usedByteCount);
+            usedByteCount += 2;
+            this.playerID = BitConverter.ToInt64(new ReadOnlySpan<byte>(segment.Array, segment.Offset + usedByteCount, segment.Count - usedByteCount));
+
+            usedByteCount += 8;
+        }
+
+        public override ArraySegment<byte> Write()
+        {
+            // Serialize
+            ArraySegment<byte> segment = SendBufferHelper.Open(4096);
+            ushort usedByteCount = 0;
+            bool success = true;
+
+            usedByteCount += 2;
+            success &= BitConverter.TryWriteBytes(new Span<byte>(segment.Array, segment.Offset + usedByteCount, segment.Count - usedByteCount), packetID);
+            usedByteCount += 2;
+            success &= BitConverter.TryWriteBytes(new Span<byte>(segment.Array, segment.Offset + usedByteCount, segment.Count - usedByteCount), playerID);
+            usedByteCount += 8;
+
+            success &= BitConverter.TryWriteBytes(new Span<byte>(segment.Array, segment.Offset, segment.Count), usedByteCount);
+
+            if (!success) { return null; }
+            return SendBufferHelper.Close(usedByteCount);
+        }
     }
 
     public class PlayerInfoOK : Packet
     {
         public int hp;
         public int attack;
+
+        public override void Read(ArraySegment<byte> segment)
+        {
+            throw new NotImplementedException();
+        }
+
+        public override ArraySegment<byte> Write()
+        {
+            throw new NotImplementedException();
+        }
     }
 
     public enum PacketID
@@ -42,27 +92,11 @@ namespace DummyClient
         {
             Console.WriteLine($"Connected: {endPoint}");
 
-            PlayerInfoReq packet = new PlayerInfoReq() { packetID = (ushort)PacketID.PlayerInfoReq, playerID = 1001 };
+            PlayerInfoReq packet = new PlayerInfoReq() { playerID = 1001 };
 
-            {
-                ArraySegment<byte> segment = SendBufferHelper.Open(4096);
-                ushort usedByteCount = 0;
-                bool success = true;
+            ArraySegment<byte> sendBuff = packet.Write();
 
-                
-                usedByteCount += 2;
-                success &= BitConverter.TryWriteBytes(new Span<byte>(segment.Array, segment.Offset + usedByteCount, segment.Count - usedByteCount), packet.packetID);
-                usedByteCount += 2;
-                success &= BitConverter.TryWriteBytes(new Span<byte>(segment.Array, segment.Offset + usedByteCount, segment.Count - usedByteCount), packet.playerID);
-                usedByteCount += 8;
-
-                success &= BitConverter.TryWriteBytes(new Span<byte>(segment.Array, segment.Offset, segment.Count), usedByteCount);
-
-
-                ArraySegment<byte> sendBuff = SendBufferHelper.Close(usedByteCount);
-
-                if (success) { Send(sendBuff); }
-            }
+            if (sendBuff != null) { Send(sendBuff); }
         }
 
         public override void OnDisconnected(EndPoint endPoint)
