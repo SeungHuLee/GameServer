@@ -1,6 +1,7 @@
 ﻿using ServerCore;
 using System;
 using System.Net;
+using System.Text;
 using System.Threading;
 
 namespace GameServer
@@ -17,6 +18,7 @@ namespace GameServer
     public class PlayerInfoReq : Packet
     {
         public long playerID;
+        public string name;
 
         public PlayerInfoReq()
         {
@@ -26,13 +28,20 @@ namespace GameServer
         public override void Read(ArraySegment<byte> segment)
         {
             ushort usedByteCount = 0;
+            ReadOnlySpan<byte> span = new ReadOnlySpan<byte>(segment.Array, segment.Offset, segment.Count);
 
-            // ushort size = BitConverter.ToUInt16(segment.Array, segment.Offset + usedByteCount);
-            usedByteCount += 2;
-            // ushort packetID = BitConverter.ToUInt16(segment.Array, segment.Offset + usedByteCount);
-            usedByteCount += 2;
-            this.playerID = BitConverter.ToInt64(new ReadOnlySpan<byte>(segment.Array, segment.Offset + usedByteCount, segment.Count - usedByteCount));
-            usedByteCount += 8;
+
+            usedByteCount += sizeof(ushort);
+
+            usedByteCount += sizeof(ushort);
+            this.playerID = BitConverter.ToInt64(span.Slice(usedByteCount, span.Length - usedByteCount));
+            usedByteCount += sizeof(long);
+
+            // string length, string
+            ushort nameLength = BitConverter.ToUInt16(span.Slice(usedByteCount, span.Length - usedByteCount));
+            usedByteCount += sizeof(ushort);
+
+            this.name = Encoding.Unicode.GetString(span.Slice(usedByteCount, nameLength));
         }
 
         public override ArraySegment<byte> Write()
@@ -42,13 +51,22 @@ namespace GameServer
             ushort usedByteCount = 0;
             bool success = true;
 
-            usedByteCount += 2;
-            success &= BitConverter.TryWriteBytes(new Span<byte>(segment.Array, segment.Offset + usedByteCount, segment.Count - usedByteCount), packetID);
-            usedByteCount += 2;
-            success &= BitConverter.TryWriteBytes(new Span<byte>(segment.Array, segment.Offset + usedByteCount, segment.Count - usedByteCount), playerID);
-            usedByteCount += 8;
+            Span<byte> span = new Span<byte>(segment.Array, segment.Offset, segment.Count);
 
-            success &= BitConverter.TryWriteBytes(new Span<byte>(segment.Array, segment.Offset, segment.Count), usedByteCount);
+            usedByteCount += sizeof(ushort);
+            success &= BitConverter.TryWriteBytes(span.Slice(usedByteCount, span.Length - usedByteCount), packetID);
+            usedByteCount += sizeof(ushort);
+            success &= BitConverter.TryWriteBytes(span.Slice(usedByteCount, span.Length - usedByteCount), playerID);
+            usedByteCount += sizeof(long);
+
+            // string length, string
+            ushort nameLength = (ushort)Encoding.Unicode.GetBytes(this.name, 0, this.name.Length, segment.Array, segment.Offset + usedByteCount + sizeof(ushort));
+            success &= BitConverter.TryWriteBytes(span.Slice(usedByteCount, span.Length - usedByteCount), nameLength);
+            usedByteCount += sizeof(ushort);
+            usedByteCount += nameLength;
+
+            // size
+            success &= BitConverter.TryWriteBytes(span, usedByteCount);
 
             if (!success) { return null; }
             return SendBufferHelper.Close(usedByteCount);
@@ -122,7 +140,7 @@ namespace GameServer
                 {
                     PlayerInfoReq packet = new PlayerInfoReq();
                     packet.Read(buffer);
-                    Console.WriteLine($"PlayerInfoReq - PlayerID: {packet.playerID}");
+                    Console.WriteLine($"PlayerInfoReq - PlayerID: {packet.playerID}, Name: {packet.name}");
                     break;
                 }
                 default:

@@ -17,6 +17,7 @@ namespace DummyClient
     public class PlayerInfoReq : Packet
     {
         public long playerID;
+        public string name;
 
         public PlayerInfoReq()
         {
@@ -26,14 +27,20 @@ namespace DummyClient
         public override void Read(ArraySegment<byte> segment)
         {
             ushort usedByteCount = 0;
+            ReadOnlySpan<byte> span = new ReadOnlySpan<byte>(segment.Array, segment.Offset, segment.Count);
 
-            // ushort size = BitConverter.ToUInt16(segment.Array, segment.Offset + usedByteCount);
-            usedByteCount += 2;
-            // ushort packetID = BitConverter.ToUInt16(segment.Array, segment.Offset + usedByteCount);
-            usedByteCount += 2;
-            this.playerID = BitConverter.ToInt64(new ReadOnlySpan<byte>(segment.Array, segment.Offset + usedByteCount, segment.Count - usedByteCount));
+            
+            usedByteCount += sizeof(ushort);
+            
+            usedByteCount += sizeof(ushort);
+            this.playerID = BitConverter.ToInt64(span.Slice(usedByteCount, span.Length - usedByteCount));
+            usedByteCount += sizeof(long);
 
-            usedByteCount += 8;
+            // string length, string
+            ushort nameLength = BitConverter.ToUInt16(span.Slice(usedByteCount, span.Length - usedByteCount));
+            usedByteCount += sizeof(ushort);
+
+            this.name = Encoding.Unicode.GetString(span.Slice(usedByteCount, nameLength));
         }
 
         public override ArraySegment<byte> Write()
@@ -43,13 +50,22 @@ namespace DummyClient
             ushort usedByteCount = 0;
             bool success = true;
 
-            usedByteCount += 2;
-            success &= BitConverter.TryWriteBytes(new Span<byte>(segment.Array, segment.Offset + usedByteCount, segment.Count - usedByteCount), packetID);
-            usedByteCount += 2;
-            success &= BitConverter.TryWriteBytes(new Span<byte>(segment.Array, segment.Offset + usedByteCount, segment.Count - usedByteCount), playerID);
-            usedByteCount += 8;
+            Span<byte> span = new Span<byte>(segment.Array, segment.Offset, segment.Count);
 
-            success &= BitConverter.TryWriteBytes(new Span<byte>(segment.Array, segment.Offset, segment.Count), usedByteCount);
+            usedByteCount += sizeof(ushort);
+            success &= BitConverter.TryWriteBytes(span.Slice(usedByteCount, span.Length - usedByteCount), packetID);
+            usedByteCount += sizeof(ushort);
+            success &= BitConverter.TryWriteBytes(span.Slice(usedByteCount, span.Length - usedByteCount), playerID);
+            usedByteCount += sizeof(long);
+
+            // string length, string
+            ushort nameLength = (ushort)Encoding.Unicode.GetBytes(this.name, 0, this.name.Length, segment.Array, segment.Offset + usedByteCount + sizeof(ushort));
+            success &= BitConverter.TryWriteBytes(span.Slice(usedByteCount, span.Length - usedByteCount), nameLength);
+            usedByteCount += sizeof(ushort);
+            usedByteCount += nameLength;
+
+            // size
+            success &= BitConverter.TryWriteBytes(span, usedByteCount);
 
             if (!success) { return null; }
             return SendBufferHelper.Close(usedByteCount);
@@ -92,7 +108,7 @@ namespace DummyClient
         {
             Console.WriteLine($"Connected: {endPoint}");
 
-            PlayerInfoReq packet = new PlayerInfoReq() { playerID = 1001 };
+            PlayerInfoReq packet = new PlayerInfoReq() { playerID = 1001, name = "SeungHu" };
 
             ArraySegment<byte> sendBuff = packet.Write();
 
