@@ -3,6 +3,7 @@ using System;
 using System.Net;
 using System.Text;
 using System.Threading;
+using System.Collections.Generic;
 
 namespace GameServer
 {
@@ -19,6 +20,39 @@ namespace GameServer
     {
         public long playerID;
         public string name;
+
+        public List<SkillInfo> skills = new List<SkillInfo>();
+
+        public struct SkillInfo
+        {
+            public int id;
+            public ushort level;
+            public float duration;
+
+            public void Read(ReadOnlySpan<byte> span, ref ushort count)
+            {
+                this.id = BitConverter.ToInt32(span.Slice(count, span.Length - count));
+                count += sizeof(int);
+                this.level = BitConverter.ToUInt16(span.Slice(count, span.Length - count));
+                count += sizeof(ushort);
+                this.duration = BitConverter.ToSingle(span.Slice(count, span.Length - count));
+                count += sizeof(float);
+            }
+
+            public bool Write(Span<byte> span, ref ushort count)
+            {
+                bool success = true;
+
+                success &= BitConverter.TryWriteBytes(span.Slice(count, span.Length - count), id);
+                count += sizeof(int);
+                success &= BitConverter.TryWriteBytes(span.Slice(count, span.Length - count), level);
+                count += sizeof(ushort);
+                success &= BitConverter.TryWriteBytes(span.Slice(count, span.Length - count), duration);
+                count += sizeof(float);
+
+                return success;
+            }
+        }
 
         public PlayerInfoReq()
         {
@@ -42,6 +76,19 @@ namespace GameServer
             usedByteCount += sizeof(ushort);
 
             this.name = Encoding.Unicode.GetString(span.Slice(usedByteCount, nameLength));
+            usedByteCount += nameLength;
+
+            // skills
+            ushort skillLength = BitConverter.ToUInt16(span.Slice(usedByteCount, span.Length - usedByteCount));
+            usedByteCount += sizeof(ushort);
+
+            skills.Clear();
+            for (int i = 0; i < skillLength; i++)
+            {
+                SkillInfo skill = new SkillInfo();
+                skill.Read(span, ref usedByteCount);
+                skills.Add(skill);
+            }
         }
 
         public override ArraySegment<byte> Write()
@@ -64,6 +111,16 @@ namespace GameServer
             success &= BitConverter.TryWriteBytes(span.Slice(usedByteCount, span.Length - usedByteCount), nameLength);
             usedByteCount += sizeof(ushort);
             usedByteCount += nameLength;
+
+            // Skill List
+            success &= BitConverter.TryWriteBytes(span.Slice(usedByteCount, span.Length - usedByteCount), (ushort)skills.Count);
+            usedByteCount += sizeof(ushort);
+
+            foreach (var skill in skills)
+            {
+                // TODO
+                success &= skill.Write(span, ref usedByteCount);
+            }
 
             // size
             success &= BitConverter.TryWriteBytes(span, usedByteCount);
@@ -141,6 +198,11 @@ namespace GameServer
                     PlayerInfoReq packet = new PlayerInfoReq();
                     packet.Read(buffer);
                     Console.WriteLine($"PlayerInfoReq - PlayerID: {packet.playerID}, Name: {packet.name}");
+
+                    foreach (var skill in packet.skills)
+                    {
+                        Console.WriteLine($"Skill - ID: ({skill.id}), Level: ({skill.level}), Duration: ({skill.duration})");
+                    }
                     break;
                 }
                 default:
